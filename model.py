@@ -60,6 +60,7 @@ class Face:
         return area_sum/2
 
 
+
 class Model:
     """
     Class to generate a model from a series of faces
@@ -178,6 +179,8 @@ class STL_Model:
         ax.set_xlabel('X Label')
         ax.set_ylabel('Y Label')
         ax.set_zlabel('Z Label')
+
+        ax.axis("equal")
 
     def get_max_size(self) -> Tuple[float]:
         """
