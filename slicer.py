@@ -19,22 +19,26 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from model import STL_Model, Model
 
 
-class Slice:
+class Plane:
     """
-    Class to contain methods needed to define an admissable slice
+    Class to contain methods needed to define an admissable plane that can be cut
     """
     def __init__(self, corners: np.ndarray)-> None:
+        """
+        Initialize a plane via the bounding corners
+        """
         self.corners = corners
 
     def plot(self) -> None:
-
+        """
+        Given a 3D plot, plot the planes
+        """
         def drawpoly(xco, yco, zco):
             verts = [list(zip(xco, yco, zco))]
             temp = Poly3DCollection(verts)
             temp.set_facecolor("b")
-            temp.set_alpha(.1)
+            temp.set_alpha(.05)
             temp.set_edgecolor('k')
-
 
             plt.gca().add_collection3d(temp)
         
@@ -43,9 +47,9 @@ class Slice:
 
 class Cut:
     """
-    Class to contain methods needed to define an admissable cut
+    Class to contain methods needed to define an admissable cut that removes material
     """
-    def __init__(self, slices: List[Slice]):
+    def __init__(self, slices: List[Plane]):
         self.slices = slices
         self.mesh = self.generate_mesh()
         self.cost: float = None
@@ -59,14 +63,15 @@ class Cut:
 
     
 
-
 class Slicer:
     """
     Class to contain methods needed to slice the object into a simplified 3D model
     """
     threshold = 0.1
     def __init__(self, path: str) -> None:
-
+        """
+        Initialize everything
+        """
         self.stl_model = STL_Model(path)
         self.max_size = self.stl_model.get_max_size()
         self.model = Model(self.max_size)
@@ -75,88 +80,83 @@ class Slicer:
 
         self.view_angles = self.generate_view_angles()
 
+    @property
+    def view_angles(self) -> List[Tuple[float,float]]:
+        """
+        View angles are a list of tuples containing the perspective in form [phi, theta]
+        """
+        return self.view_angles
+
     def generate_cuts(self) -> None:
+        """
+        Using the 3D model, generate a set of cuts which will remove material that bring the model
+        to the correct shape
+        """
+
         num_angles = len(self.view_angles)
 
-
+        # for each possible angle, generate a set of admissable cuts
         for angle_idx in range(num_angles):
-            # angle_idx = 12
             angle = self.view_angles[angle_idx]
         
+            # get a flattened version of the stl points from the specific angle
             perspective_array = self.rotate_and_flatten(angle)
 
-            # fig, ax = plt.subplots()        
-            # ax.scatter(perspective_array[:,0], perspective_array[:,1])
-            # ax.axis("equal")
-            
-
-
+            # get alpha shape which contains the set of points. Similar to a concave hull
             alpha_shape = alphashape.alphashape(perspective_array, 2)
             alpha_shape = alpha_shape.simplify(self.threshold, preserve_topology=True)
-
             alpha_shape = np.array(alpha_shape.boundary.xy)
-
-            # plt.plot(*alpha_shape, "k")
             
-
             # weird issue where first and last points are the same
             if np.array_equal(alpha_shape[:,[0]], alpha_shape[:,[-1]]):
                 alpha_shape = np.delete(alpha_shape, -1, 1)
 
-            # fix double concave
+            # if two sequential points are concave, remove points until we only have one concave
+            # point. Prevents non-admissable cuts
             is_concave = self.get_concave_points(alpha_shape)
-
-
-            # for idx , _ in enumerate(alpha_shape[0,:]):
-            #     if is_concave[idx]:
-            #         plt.plot(*alpha_shape[:,idx], "*r")
-            #     else:
-            #         plt.plot(*alpha_shape[:,idx], "*g")
-
-            # plt.show()
-
-            # start creating cuts
             alpha_shape, is_concave = self.remove_double_concave(alpha_shape, is_concave)
 
-            # plt.plot(*alpha_shape, "k")
-
+            # using the outline of the alpha shape, generate a set of 2d lines that extend outward
+            # from the model
             cut_lines = self.generate_cut_lines(alpha_shape, is_concave)
 
-            # for line_idx in range(len(cut_lines[0,0,:])):
-            #     cut_line = cut_lines[:,:,line_idx]
-            #     plt.plot(*cut_line, 'k')
-                # print(cut_line)
+            # start converting the 2D lines into 3D planes
+            planes = []
 
-            slices = []
-
+            # take each 2D line and make it into a 3D plane and then rotate it into global frame
             for line_idx in range(len(cut_lines[0,0,:])):
                 cut_line = cut_lines[:,:,line_idx]
                 cut_points = np.zeros((3,4))
                 cut_points[0,:] = np.concatenate((cut_line[0,:], np.flip(cut_line[0,:])), axis=0)
                 cut_points[1,:] = np.array([1, 1, -1, -1])
                 cut_points[2,: ] = np.concatenate((cut_line[1,:], np.flip(cut_line[1,:])), axis=0)
-                
-                # print(cut_points)
-
                 cut_points_adjusted = self.unrotate(angle, cut_points.T)
 
-                # make into slice
-                slices.append(Slice(cut_points_adjusted))
-
-            slice_idx = 0
-            while slice_idx < len(slices) -1:
-                if is_concave[slice_idx]:
-                    self.cuts.append(Cut([slices[slice_idx], slices[slice_idx + 1]]))
-                    slice_idx += 1
+                # make the plane into a Plane object by set of bounding coordinates
+                planes.append(Plane(cut_points_adjusted))
+            
+            # add each plane as a cut. If the point is concave, add the set of two planes as a cut
+            plane_idx = 0
+            while plane_idx < len(planes) -1:
+                if is_concave[plane_idx]:
+                    self.cuts.append(Cut([planes[plane_idx], planes[plane_idx + 1]]))
+                    plane_idx += 1
                 else:
-                    self.cuts.append(Cut([slices[slice_idx]]))
-                slice_idx += 1
+                    self.cuts.append(Cut([planes[plane_idx]]))
+                plane_idx += 1
 
 
     def get_concave_points(self, points: np.ndarray) -> List[bool]:
+        """
+        Given a set of points that form the bounds of a polygon, return a list of bool which
+        identify which points are the inner point of a concave feature.
+        """
 
+        # initialize empty bool list
         is_concave = []
         
+        # for all points, check if the angle counterclockwise is greater than pi. If it is, append
+        # true for concave
         for idx in range(len(points[0,:]) - 1):
             vertex_1 = points[:,[idx-1]]
             vertex_0 = points[:, [idx]]
@@ -164,6 +164,7 @@ class Slicer:
 
             is_concave.append(self.angle(vertex_0, vertex_1, vertex_2) > math.pi)
 
+        # check the last and first point
         vertex_1 = points[:,[-2]]
         vertex_0 = points[:,[-1]]
         vertex_2 = points[:,[0]]
@@ -172,11 +173,15 @@ class Slicer:
 
         return is_concave
 
-    def remove_double_concave(self, points: np.ndarray, is_concave: List[bool]) -> (np.ndarray, List[bool]):
+    def remove_double_concave(self, points: np.ndarray, is_concave: List[bool]
+                              ) -> Tuple[np.ndarray, List[bool]]:
+        """
+        Given a set of points and a list of which ones are concave, remove points until there are
+        no consecutive concave points
+        """
         if is_concave[0] and is_concave[-1]:
             points = np.delete(points, 0, 1)
             is_concave.pop(0)
-
         
         cur_idx = 0
         while cur_idx < len(is_concave) - 2:
@@ -190,17 +195,19 @@ class Slicer:
     
 
     def generate_cut_lines(self, points: np.ndarray, is_concave: bool) -> np.ndarray:
+        """
+        Given the set of points which define the alpha shape of a polygon, generate a set of 2D
+        lines which represent cuts that follow the edge. 
+        """
         cut_lines = np.zeros((2,2,len(points[0,:])))
         for idx in range(len(points[0,:])):
             prev_point = points[:,[idx-1]]
             cur_point = points[:,[idx]]
 
-
             if is_concave[idx-1]:
                 vec = np.concatenate((prev_point, cur_point), axis=1)                
                 vec = (vec - vec[:,[0]]) / np.linalg.norm(vec - vec[:,[0]]) * 2 + vec[:,[0]]
                 
-
             elif is_concave[idx]:
                 vec = np.concatenate((cur_point, prev_point), axis=1)
                 vec =  (vec - vec[:,[0]]) / np.linalg.norm(vec - vec[:,[0]]) * 2 + vec[:,[0]]
@@ -215,9 +222,8 @@ class Slicer:
         return cut_lines
 
 
-
-
-    def angle(self, vertex0, vertex_1, vertex_2, angle_type='unsigned'):
+    def angle(self, vertex0: np.ndarray, vertex_1: np.ndarray, vertex_2: np.ndarray,
+              angle_type: str ='unsigned') -> float:
         """
         Compute the angle between two edges  vertex0-- vertex_1 and  vertex0--
         vertex_2 having an endpoint in common. The angle is computed by starting
@@ -261,11 +267,9 @@ class Slicer:
             raise ValueError('Invalid argument angle_type')
 
         return edge_angle
-        
-
             
 
-    def generate_view_angles(self, nb_poses = 10) -> Tuple[float]:
+    def generate_view_angles(self, nb_poses = 10) -> List[Tuple[float, float]]:
         """
         Generate a set of perspectives to look at the model from, return list of [phi, theta]
         """
@@ -312,11 +316,12 @@ class Slicer:
         
         return array[:,0:3:2]
     
-    def unrotate(self, perspective: Tuple[float], cut_line: np.ndarray) -> np.ndarray:
+    def unrotate(self, perspective: Tuple[float, float], cut_line: np.ndarray) -> np.ndarray:
+        """
+        Given a cut plane, unrotate it using the current perspective which contains phi and theta
+        """
         phi = perspective[0]
         theta = -perspective[1]
-
-        # print(cut_line)
 
         array = cut_line @ np.array([[1, 0, 0],
                                   [0, math.cos(phi), -math.sin(phi)],
@@ -325,8 +330,6 @@ class Slicer:
         array = array @ np.array([[math.cos(theta), -math.sin(theta), 0],
                                   [math.sin(theta), math.cos(theta), 0],
                                   [0, 0, 1]])
-
-        # print(array)
         return array
     
 
@@ -339,12 +342,6 @@ class Slicer:
         self.cuts[0].slices[0].plot()
 
         print(sum([len(cut.slices) for cut in self.cuts]))
-
-        
-
-
-
-
 
 
     

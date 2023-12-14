@@ -14,53 +14,6 @@ import numpy as np
 from typing import List, Tuple
 
 
-class Face:
-    """
-    Class to represent a single face of an object
-    """
-    def __init__(self, vertices: np.ndarray) -> None:
-        self._vertices = vertices
-
-    @property
-    def vertices(self) -> np.ndarray:
-        """
-        Vertices property function of Face class 
-        np.ndarray (2xn_points)
-        """
-        return self._vertices
-    
-    @vertices.setter
-    def vertices(self, vertices) -> None:
-        """
-        Setter for vertices
-        """
-        self._vertices = vertices
-
-    @property
-    def area(self) -> float:
-        """
-        get signed area of face
-        """
-        area_sum = 0
-
-        for idx,_ in enumerate(self.vertices[0] -1):
-            x_1 = self.vertices[0, idx]
-            y_1 = self.vertices[1, idx]
-            x_2 = self.vertices[0, idx + 1]
-            y_2 = self.vertices[1, idx + 1]
-
-            area_sum += (x_2 - x_1)*(y_2 + y_1)
-
-        x_1 = x_2
-        x_2 = self.vertices[0,0]
-        y_1 = y_2
-        y_2 = self.vertices[1,0]
-        area_sum += (x_2 - x_1)*(y_2 + y_1)
-
-        return area_sum/2
-
-
-
 class Model:
     """
     Class to generate a model from a series of faces
@@ -71,7 +24,7 @@ class Model:
         """
 
         self.dimension = dimension
-        self.faces = self.initialize_faces()
+        self.model = self.initialize_model()
         
 
     def initialize_faces(self) -> List[Face]:
@@ -80,33 +33,8 @@ class Model:
         """
         x_min, x_max, y_min, y_max, z_min, z_max = self.dimension
         
-        faces = []
+        return 
 
-        faces.append(Face(np.array([[x_min, x_max, x_max, x_min],
-                                    [y_min, y_min, y_max, y_max],
-                                    [z_min, z_min, z_min, z_min]])))
-        
-        faces.append(Face(np.array([[x_min, x_max, x_max, x_min],
-                                    [y_min, y_min, y_max, y_max],
-                                    [z_max, z_max, z_max, z_max]])))
-        
-        faces.append(Face(np.array([[x_min, x_min, x_min, x_min],
-                                    [y_min, y_max, y_max, y_min],
-                                    [z_min, z_min, z_max, z_max]])))
-        
-        faces.append(Face(np.array([[x_max, x_max, x_max, x_max],
-                                    [y_min, y_max, y_max, y_min],
-                                    [z_min, z_min, z_max, z_max]])))
-        
-        faces.append(Face(np.array([[x_min, x_max, x_max, x_min],
-                                    [y_min, y_min, y_min, y_min],
-                                    [z_min, z_min, z_max, z_max]])))
-    
-        faces.append(Face(np.array([[x_min, x_max, x_max, x_min],
-                                    [y_max, y_max, y_max, y_max],
-                                    [z_min, z_min, z_max, z_max]])))
-        
-        return faces
     
     def plot(self) -> None:
         """
@@ -117,17 +45,14 @@ class Model:
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
 
-        def drawpoly(xco, yco, zco):
-            verts = [list(zip(xco, yco, zco))]
-            temp = Poly3DCollection(verts)
-            temp.set_facecolor("b")
-            temp.set_alpha(.4)
-            temp.set_edgecolor('k')
+        # def drawpoly(xco, yco, zco):
+        #     verts = [list(zip(xco, yco, zco))]
+        #     temp = Poly3DCollection(verts)
+        #     temp.set_facecolor("b")
+        #     temp.set_alpha(.4)
+        #     temp.set_edgecolor('k')
 
-            ax.add_collection3d(temp)
-
-        for face in self.faces:
-            drawpoly(face.vertices[0], face.vertices[1], face.vertices[2])
+        #     ax.add_collection3d(temp)
 
         ax.set(xlim=(1.25*x_min, 1.25*x_max),
                ylim=(1.25*y_min, 1.25*y_max),
@@ -152,17 +77,13 @@ class STL_Model:
         """
         Plot the STL in a 3D plot
         """
-        
         vpl.mesh_plot(self.mesh)
         vpl.show()
         
-
     def get_pointcloud(self) -> np.ndarray:
         """
         convert mesh into pointcloud
         """
-        # cloud = open3d.geometry.sample_points_uniformly(input, number_of_points=samples)
-
         points = self.mesh.points.reshape([-1, 3])
         points = np.unique(points, axis=0)
 
@@ -175,7 +96,7 @@ class STL_Model:
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
 
-        ax.scatter(self.pointcloud[:,0], self.pointcloud[:,1], self.pointcloud[:,2])
+        ax.scatter(self.pointcloud[:,0], self.pointcloud[:,1], self.pointcloud[:,2],"*k")
         ax.set_xlabel('X Label')
         ax.set_ylabel('Y Label')
         ax.set_zlabel('Z Label')
