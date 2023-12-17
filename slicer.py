@@ -7,85 +7,36 @@ import math
 from matplotlib import pyplot as plt
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
+from scipy.spatial import ConvexHull
 
-import os
-import sys
-import pandas as pd
-from descartes import PolygonPatch
-sys.path.insert(0, os.path.dirname(os.getcwd()))
+
 import alphashape
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from model import STL_Model, Model
-
-
-class Plane:
-    """
-    Class to contain methods needed to define an admissable plane that can be cut
-    """
-    def __init__(self, corners: np.ndarray)-> None:
-        """
-        Initialize a plane via the bounding corners
-        """
-        self.corners = corners
-
-    def plot(self) -> None:
-        """
-        Given a 3D plot, plot the planes
-        """
-        def drawpoly(xco, yco, zco):
-            verts = [list(zip(xco, yco, zco))]
-            temp = Poly3DCollection(verts)
-            temp.set_facecolor("b")
-            temp.set_alpha(.05)
-            temp.set_edgecolor('k')
-
-            plt.gca().add_collection3d(temp)
-        
-        drawpoly(*self.corners.T)
+from stl import STL_Model
+from geometry import Cut, Plane
 
 
-class Cut:
-    """
-    Class to contain methods needed to define an admissable cut that removes material
-    """
-    def __init__(self, slices: List[Plane]):
-        self.slices = slices
-        self.mesh = self.generate_mesh()
-        self.cost: float = None
-        self.neighbors: List[Cut] = None
-        
-    def generate_mesh(self) -> None:
-        return None
-
-    def generate_cost(self) -> None:
-        pass
-
-    
 
 class Slicer:
     """
     Class to contain methods needed to slice the object into a simplified 3D model
     """
     threshold = 0.1
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, num_poses: int = 20) -> None:
         """
         Initialize everything
         """
         self.stl_model = STL_Model(path)
         self.max_size = self.stl_model.get_max_size()
-        self.model = Model(self.max_size)
 
         self.cuts: List[Cut] = []
 
-        self.view_angles = self.generate_view_angles()
 
-    @property
-    def view_angles(self) -> List[Tuple[float,float]]:
-        """
-        View angles are a list of tuples containing the perspective in form [phi, theta]
-        """
-        return self.view_angles
+        self.view_angles = self.generate_view_angles(nb_poses = num_poses)
+    
+
+        self.generate_cuts()
+
 
     def generate_cuts(self) -> None:
         """
@@ -97,28 +48,126 @@ class Slicer:
 
         # for each possible angle, generate a set of admissable cuts
         for angle_idx in range(num_angles):
+            # angle_idx = 1
             angle = self.view_angles[angle_idx]
         
             # get a flattened version of the stl points from the specific angle
             perspective_array = self.rotate_and_flatten(angle)
 
             # get alpha shape which contains the set of points. Similar to a concave hull
-            alpha_shape = alphashape.alphashape(perspective_array, 2)
+            alpha_shape = alphashape.alphashape(perspective_array.T, 2)
             alpha_shape = alpha_shape.simplify(self.threshold, preserve_topology=True)
             alpha_shape = np.array(alpha_shape.boundary.xy)
             
-            # weird issue where first and last points are the same
-            if np.array_equal(alpha_shape[:,[0]], alpha_shape[:,[-1]]):
-                alpha_shape = np.delete(alpha_shape, -1, 1)
+
 
             # if two sequential points are concave, remove points until we only have one concave
             # point. Prevents non-admissable cuts
-            is_concave = self.get_concave_points(alpha_shape)
-            alpha_shape, is_concave = self.remove_double_concave(alpha_shape, is_concave)
 
-            # using the outline of the alpha shape, generate a set of 2d lines that extend outward
-            # from the model
+            hull = ConvexHull(perspective_array.T)
+
+            hull_points = perspective_array[:,hull.vertices]
+
+            is_concave = self.get_concave_points(alpha_shape, hull_points)
+
+
+            while self.contains_double_concave(is_concave):
+                alpha_shape, is_concave = self.remove_double_concave(alpha_shape, is_concave)
+                is_concave = self.get_concave_points(alpha_shape, hull_points)
+                
+            # print(is_concave)
+            is_concave = self.do_last_concave_check(alpha_shape, is_concave)
+            # print(is_concave)
+
+            # plt.figure()
+
+            # plt.plot(*alpha_shape)
+            # plt.plot(*perspective_array, "*b")
+            # for test_idx in range(len(is_concave) ):
+            #     if is_concave[test_idx] == 1:
+            #         plt.plot(*alpha_shape[:,test_idx],"or")
+            #     elif is_concave[test_idx] == 2:
+            #         plt.plot(*alpha_shape[:,test_idx],"ok")
+            #     else:
+            #         plt.plot(*alpha_shape[:,test_idx], "og")
+
+            
+
+
+
+            # plt.figure()
+            # plt.plot(*alpha_shape)
+            # plt.plot(*perspective_array, "*b")
+            # for test_idx in range(len(is_concave)):
+            #     if is_concave[test_idx] == 1:
+            #         plt.plot(*alpha_shape[:,test_idx],"or")
+            #     elif is_concave[test_idx] == 2:
+            #         plt.plot(*alpha_shape[:,test_idx],"ok")
+            #     else:
+            #         plt.plot(*alpha_shape[:,test_idx], "og")
+
+            # plt.plot(*hull_points)
+
+            # plt.show()
+
+            # alpha_shape, is_concave = self.remove_global_concave(alpha_shape, is_concave, hull_points)
+
+
+
+            # plt.figure()
+            # plt.plot(*alpha_shape)
+            # plt.plot(*perspective_array, "*b")
+            # for test_idx in range(len(is_concave)):
+            #     if is_concave[test_idx] == 1:
+            #         plt.plot(*alpha_shape[:,test_idx],"or")
+            #     elif is_concave[test_idx] == 2:
+            #         plt.plot(*alpha_shape[:,test_idx],"ok")
+            #     else:
+            #         plt.plot(*alpha_shape[:,test_idx], "og")
+
+            # plt.plot(*hull_points)
+            # plt.gca().axis("equal")
+                    
+
+
             cut_lines = self.generate_cut_lines(alpha_shape, is_concave)
+
+            if np.array_equal(alpha_shape[:,[0]], alpha_shape[:,[-1]]):
+                alpha_shape = np.delete(alpha_shape, -1, 1)
+                is_concave.pop(-1)
+
+            # print(cut_lines)
+
+            
+            # plt.figure()
+
+            # plane_idx = 0
+
+            # print(cut_lines.shape)
+            # # print(cut_lines)
+            # print(len(is_concave))
+            # print(is_concave)
+
+            # while plane_idx < len(is_concave) - 1:
+            #     if is_concave[plane_idx]:
+            #         plt.plot(*cut_lines[:,:,plane_idx], "-r")
+            #     elif is_concave[plane_idx+1]:
+            #         plt.plot(*cut_lines[:,:,plane_idx], "-r")
+            #     else:
+            #         plt.plot(*cut_lines[:,:,plane_idx], "-g")
+            #         # print("convex")
+            #     plane_idx += 1
+                
+            # print(plane_idx)
+
+            # plt.show()
+            
+
+            # plt.figure()
+            # # print(cut_lines)
+            # plt.plot(*cut_lines)
+            # # plt.plot(*alpha_shape)
+
 
             # start converting the 2D lines into 3D planes
             planes = []
@@ -128,25 +177,92 @@ class Slicer:
                 cut_line = cut_lines[:,:,line_idx]
                 cut_points = np.zeros((3,4))
                 cut_points[0,:] = np.concatenate((cut_line[0,:], np.flip(cut_line[0,:])), axis=0)
-                cut_points[1,:] = np.array([1, 1, -1, -1])
+                cut_points[1,:] = np.array([4, 4, -4, -4])
                 cut_points[2,: ] = np.concatenate((cut_line[1,:], np.flip(cut_line[1,:])), axis=0)
-                cut_points_adjusted = self.unrotate(angle, cut_points.T)
+                cut_points_adjusted = self.unrotate(angle, cut_points)
 
                 # make the plane into a Plane object by set of bounding coordinates
                 planes.append(Plane(cut_points_adjusted))
-            
+
             # add each plane as a cut. If the point is concave, add the set of two planes as a cut
+            
+            # plt.figure()
+
+            # print(len(is_concave), len(planes))
             plane_idx = 0
-            while plane_idx < len(planes) -1:
+            end_plane = len(planes) 
+            while plane_idx < end_plane:
                 if is_concave[plane_idx]:
-                    self.cuts.append(Cut([planes[plane_idx], planes[plane_idx + 1]]))
-                    plane_idx += 1
+                    # grab plane before and at
+                    # plt.plot(*cut_lines[:,:,plane_idx], "-r")
+                    # plt.plot(*cut_lines[:,:,plane_idx-1], "-r")
+                    cur_plane = planes[plane_idx]
+                    prev_plane = planes[plane_idx-1]
+
+                    self.cuts.append(Cut([cur_plane, prev_plane]))
+
+                    if plane_idx == 0:
+                        end_plane -= 1
+                    plane_idx +=1
+                elif is_concave[plane_idx - 1]:
+                    # grab plane before and at
+                    # plt.plot(*cut_lines[:,:,plane_idx-1], "-r")
+                    # plt.plot(*cut_lines[:,:,plane_idx-2], "-r")
+                    prev_plane = planes[plane_idx-1]
+                    prev_prev_plane = planes[plane_idx-2]
+
+                    self.cuts.append(Cut([prev_plane, prev_prev_plane]))
+
+                    if plane_idx == 0:
+                        end_plane -= 1
+                    # plane_idx +=1
+
                 else:
-                    self.cuts.append(Cut([planes[plane_idx]]))
+                    # plt.plot(*cut_lines[:,:,plane_idx-1], "-g")
+                    prev_plane = planes[plane_idx-1]
+                    self.cuts.append(Cut([prev_plane]))
+
                 plane_idx += 1
+                    
+        
+
+                
+            # return
+        
+    def do_last_concave_check(self, points: np.ndarray, is_concave: List[bool]) -> List[bool]:
+        n_points = len(is_concave) - 1
+        for idx in range(n_points):
+            if idx == 0:
+                prev_point = points[:,[-2]]
+            else:
+                prev_point = points[:,[idx-1]]
+            cur_point = points[:,[idx]]
+            next_point = points[:,[idx+1]]
+             
+            angle = self.angle(cur_point, prev_point, next_point)
+
+            if angle < math.pi:
+                is_concave[idx] = 0
+            
+        is_concave[-1] = is_concave[0]
+
+        return is_concave
+
+            
+
+    def contains_double_concave(self, is_concave: List[bool]) -> bool:
+        """
+        Using the is_concave bool list, check if any sequential points are concave
+        """
+        for idx in range(len(is_concave)-1):
+            cur_value = is_concave[idx]
+            nex_value = is_concave[idx + 1]
+            if cur_value and nex_value:
+                return True
+        return False
 
 
-    def get_concave_points(self, points: np.ndarray) -> List[bool]:
+    def get_concave_points(self, vertices: np.ndarray, hull: np.ndarray) -> List[bool]:
         """
         Given a set of points that form the bounds of a polygon, return a list of bool which
         identify which points are the inner point of a concave feature.
@@ -154,22 +270,24 @@ class Slicer:
 
         # initialize empty bool list
         is_concave = []
+
+        # get size of alpha_shape
+        n_points = len(vertices[0,:]) - 1
         
-        # for all points, check if the angle counterclockwise is greater than pi. If it is, append
-        # true for concave
-        for idx in range(len(points[0,:]) - 1):
-            vertex_1 = points[:,[idx-1]]
-            vertex_0 = points[:, [idx]]
-            vertex_2 = points[:,[idx+1]]
+        for idx in range(n_points):
+            # concave_test = 0
+            cur_point = vertices[:,[idx]]
+            # next_point = vertices[:,[idx+1]]
+            # prev_point = vertices[:,[idx-1]]
 
-            is_concave.append(self.angle(vertex_0, vertex_1, vertex_2) > math.pi)
+            # angle = self.angle(cur_point, prev_point, next_point)
+            # if angle > math.pi:
+            #     concave_test = 1
 
-        # check the last and first point
-        vertex_1 = points[:,[-2]]
-        vertex_0 = points[:,[-1]]
-        vertex_2 = points[:,[0]]
-
-        is_concave.append(self.angle(vertex_0, vertex_1, vertex_2) > math.pi)
+            # is_concave.append(concave_test)
+            is_concave.append(not np.any(np.isin(hull, cur_point)))
+        
+        is_concave.append(is_concave[0])
 
         return is_concave
 
@@ -179,18 +297,84 @@ class Slicer:
         Given a set of points and a list of which ones are concave, remove points until there are
         no consecutive concave points
         """
-        if is_concave[0] and is_concave[-1]:
-            points = np.delete(points, 0, 1)
-            is_concave.pop(0)
-        
-        cur_idx = 0
-        while cur_idx < len(is_concave) - 2:
-            if is_concave[cur_idx]:
-                while is_concave[cur_idx + 1]:
-                    points = np.delete(points, cur_idx + 1, 1)
-                    is_concave.pop(cur_idx + 1)
-            cur_idx += 1
+        # remove last point
+        points = points[:,0:-1]
+        is_concave = is_concave[:-1]
 
+        # get to good starting points
+        for idx, val in enumerate(is_concave):
+            if val == 0:
+                break
+
+        points = np.concatenate((points[:,idx:], points[:,:idx]), axis=1)
+        is_concave = is_concave[idx:] + is_concave[:idx]
+
+
+        # copy first value to the last spot
+        points = np.concatenate((points, points[:,[0]]), axis = 1)
+        is_concave.append(is_concave[0])
+
+
+        # find double concave section
+        idx = 0 
+        while idx < len(is_concave)-1:
+            cur_point = points[:,idx]
+
+            # start of concave, see if it continues
+            if is_concave[idx] == 0 and is_concave[idx+1] == 1:
+                end_idx = idx+1
+                while True:
+                    end_idx += 1
+                    if is_concave[end_idx] == 0:
+                        break
+                concave_len = end_idx - idx
+
+                if concave_len > 2:
+                    end_point = points[:,[end_idx]]
+                    max_area = 0
+                    best_idx = 0
+                    # check all the middle points and try to form triangle
+                    for mid_idx in range(concave_len):
+                        mid_point = points[:,[idx+mid_idx+1]]
+                        area = .5*abs(cur_point[0]*(mid_point[1] - end_point[1]) + \
+                                      mid_point[0]*(end_point[1] - cur_point[1]) + \
+                                      end_point[0]*(cur_point[1] - mid_point[1]))
+                        
+                        if area > max_area:
+                            max_area = area
+                            best_idx = idx+mid_idx+1
+
+                    points = np.concatenate((points[:,:idx+1], points[:,[best_idx]], points[:,end_idx:]), axis=1)
+                    is_concave = is_concave[0:idx+1] + [is_concave[best_idx]] + is_concave[end_idx:]
+
+            idx +=1
+
+        return points, is_concave
+
+    def remove_global_concave(self, points: np.ndarray, is_concave: bool, hull: np.ndarray) -> Tuple[np.ndarray, List[bool]]:
+        """
+        Remove globally convex points
+        """
+        temp_points = points
+        temp_is_concave = is_concave
+
+        idx = 0
+        # print(len(is_concave))
+
+        while idx < len(is_concave) - 1:
+
+            cur_point = points[:,idx]
+            
+            # print(np.isin(hull, cur_point))
+            if not np.any(np.isin(hull, cur_point)):
+                if not is_concave[idx]:
+                    if not (is_concave[idx-1] and is_concave[idx+1]):
+                    # remove point
+                        points = np.concatenate((points[:,0:idx], points[:,idx+1:]), axis=1)
+                        is_concave.pop(idx)
+            idx += 1
+                    
+        
         return points, is_concave
     
 
@@ -199,25 +383,26 @@ class Slicer:
         Given the set of points which define the alpha shape of a polygon, generate a set of 2D
         lines which represent cuts that follow the edge. 
         """
-        cut_lines = np.zeros((2,2,len(points[0,:])))
-        for idx in range(len(points[0,:])):
-            prev_point = points[:,[idx-1]]
+        cut_lines = np.zeros((2,2,len(points[0,:])-1))
+        for idx in range(len(is_concave) - 1):
             cur_point = points[:,[idx]]
+            next_point = points[:,[idx+1]]
 
-            if is_concave[idx-1]:
-                vec = np.concatenate((prev_point, cur_point), axis=1)                
-                vec = (vec - vec[:,[0]]) / np.linalg.norm(vec - vec[:,[0]]) * 2 + vec[:,[0]]
+            if is_concave[idx+1]:
+                vec = np.concatenate((cur_point, next_point), axis=1)                
+                vec = (vec - vec[:,[1]]) / np.linalg.norm(vec - vec[:,[1]]) * 2 + vec[:,[1]]
                 
             elif is_concave[idx]:
-                vec = np.concatenate((cur_point, prev_point), axis=1)
+                vec = np.concatenate((cur_point, next_point), axis=1)
                 vec =  (vec - vec[:,[0]]) / np.linalg.norm(vec - vec[:,[0]]) * 2 + vec[:,[0]]
 
             else:
-                vec = np.concatenate((prev_point, cur_point), axis=1)
+                vec = np.concatenate((cur_point, next_point), axis=1)
                 original_len = np.linalg.norm(vec - vec[:,[0]])
                 vec =  (vec - vec[:,[0]]) / original_len * 2 - .5*(2-original_len)*(vec[:,[1]]-vec[:,[0]])/original_len +  vec[:,[0]]
 
             cut_lines[:,:,idx] = vec
+
 
         return cut_lines
 
@@ -269,7 +454,7 @@ class Slicer:
         return edge_angle
             
 
-    def generate_view_angles(self, nb_poses = 10) -> List[Tuple[float, float]]:
+    def generate_view_angles(self, nb_poses: int) -> List[Tuple[float, float]]:
         """
         Generate a set of perspectives to look at the model from, return list of [phi, theta]
         """
@@ -304,17 +489,17 @@ class Slicer:
         phi = -perspective[0]
         theta = perspective[1]
 
-        array = self.stl_model.get_pointcloud()     
+        array = self.stl_model.get_pointcloud()
 
-        array = array @ np.array([[math.cos(theta), -math.sin(theta), 0],
-                                  [math.sin(theta), math.cos(theta), 0],
-                                  [0, 0, 1]])
+        array = np.array([[math.cos(theta), -math.sin(theta), 0],
+                          [math.sin(theta), math.cos(theta), 0],
+                          [0, 0, 1]]) @ array
         
-        array = array @ np.array([[1, 0, 0],
-                                  [0, math.cos(phi), -math.sin(phi)],
-                                  [0, math.sin(phi), math.cos(phi)]])
+        array = np.array([[1, 0, 0],
+                          [0, math.cos(phi), -math.sin(phi)],
+                          [0, math.sin(phi), math.cos(phi)]]) @ array
         
-        return array[:,0:3:2]
+        return array[0:3:2,:]
     
     def unrotate(self, perspective: Tuple[float, float], cut_line: np.ndarray) -> np.ndarray:
         """
@@ -323,25 +508,19 @@ class Slicer:
         phi = perspective[0]
         theta = -perspective[1]
 
-        array = cut_line @ np.array([[1, 0, 0],
-                                  [0, math.cos(phi), -math.sin(phi)],
-                                  [0, math.sin(phi), math.cos(phi)]])
+        array =  np.array([[1, 0, 0],
+                           [0, math.cos(phi), -math.sin(phi)],
+                           [0, math.sin(phi), math.cos(phi)]]) @ cut_line
         
-        array = array @ np.array([[math.cos(theta), -math.sin(theta), 0],
-                                  [math.sin(theta), math.cos(theta), 0],
-                                  [0, 0, 1]])
+        
+        array = np.array([[math.cos(theta), -math.sin(theta), 0],
+                          [math.sin(theta), math.cos(theta), 0],
+                          [0, 0, 1]]) @ array
         return array
     
 
     def test(self):
-        self.generate_cuts()
-        self.stl_model.plot_points()
-        for cut in self.cuts:
-            for slice in cut.slices:
-                slice.plot()
-        self.cuts[0].slices[0].plot()
-
-        print(sum([len(cut.slices) for cut in self.cuts]))
-
+        pass
+    
 
     
