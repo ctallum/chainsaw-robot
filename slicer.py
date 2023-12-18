@@ -110,60 +110,62 @@ class Slicer:
                 planes.append(Plane(cut_points_adjusted))
 
             # add each plane as a cut. If the point is concave, add the set of two planes as a cut
-            
-            # plt.figure()
-
-            # print(len(is_concave), len(planes))
             plane_idx = 0
             end_plane = len(planes) 
             while plane_idx < end_plane:
+                # if the point is concave, add two planes to the cut
                 if is_concave[plane_idx]:
-                    # grab plane before and at
-                    # plt.plot(*cut_lines[:,:,plane_idx], "-r")
-                    # plt.plot(*cut_lines[:,:,plane_idx-1], "-r")
                     cur_plane = planes[plane_idx]
                     prev_plane = planes[plane_idx-1]
 
                     self.cuts.append(Cut([cur_plane, prev_plane]))
 
+                    # make and adjustment to the end condition if the first point is concave
                     if plane_idx == 0:
                         end_plane -= 1
                     plane_idx +=1
+
+                # edge case if the first point is the point after a concave point
                 elif is_concave[plane_idx - 1]:
-                    # grab plane before and at
-                    # plt.plot(*cut_lines[:,:,plane_idx-1], "-r")
-                    # plt.plot(*cut_lines[:,:,plane_idx-2], "-r")
                     prev_plane = planes[plane_idx-1]
                     prev_prev_plane = planes[plane_idx-2]
 
+                    # add two planes to the cut
                     self.cuts.append(Cut([prev_plane, prev_prev_plane]))
 
+                    # make adjustment to the end condition
                     if plane_idx == 0:
                         end_plane -= 1
-                    # plane_idx +=1
 
+                # if this is a non-convex plane, just add it to the cut alone
                 else:
-                    # plt.plot(*cut_lines[:,:,plane_idx-1], "-g")
                     prev_plane = planes[plane_idx-1]
                     self.cuts.append(Cut([prev_plane]))
 
                 plane_idx += 1
                     
     def do_last_concave_check(self, points: np.ndarray, is_concave: List[bool]) -> List[bool]:
+        """
+        Iterate through all of the points, and if they are locally convex, mark them as convex
+        """
         n_points = len(is_concave) - 1
         for idx in range(n_points):
+            # get the previous, next, and current points
             if idx == 0:
                 prev_point = points[:,[-2]]
             else:
                 prev_point = points[:,[idx-1]]
             cur_point = points[:,[idx]]
             next_point = points[:,[idx+1]]
-             
+            
+            # get the angle between the three points
             angle = self.angle(cur_point, prev_point, next_point)
 
+            # if the angle is less then pi, then the point is convex
             if angle < math.pi:
                 is_concave[idx] = 0
             
+        # make sure the last point matches the first point
         is_concave[-1] = is_concave[0]
 
         return is_concave
