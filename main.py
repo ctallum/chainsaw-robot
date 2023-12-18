@@ -19,7 +19,7 @@ path = "stl/dog.stl"
 if __name__ == "__main__":
     # initialize everything
     stl = STL_Model(path)
-    slicing = Slicer(path, num_poses = 100)
+    slicing = Slicer(path, num_poses = 10)
     model = Model(stl.get_max_size())
 
     fig = plt.figure()
@@ -34,8 +34,8 @@ if __name__ == "__main__":
 
     print(idx)
     
-    # model.plot()
+    model.plot()
     # # stl.plot_mesh()
     # # model.mesh.show()
 
-    # plt.show()
+    plt.show()

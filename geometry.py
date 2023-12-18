@@ -2,11 +2,10 @@
 File to hold classes Plane and Cut
 """
 
-import math
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
-from typing import List, Tuple
+from typing import List
 
 class Plane:
     """
@@ -27,12 +26,7 @@ class Plane:
         vec_1 = self.corners[:,1] - self.corners[:,0]
         vec_2 = self.corners[:,2] - self.corners[:,1]
 
-        # print(vec_1, vec_2)
-
-
         norm_vec = -(np.cross(vec_2, vec_1)) / np.linalg.norm(np.cross(vec_2, vec_1))
-
-        # print(norm_vec)
 
         return norm_vec
 
@@ -58,7 +52,7 @@ class Cut:
     """
     Class to contain methods needed to define an admissable cut that removes material
     """
-    def __init__(self, slices: List[Plane]):
+    def __init__(self, slices: List[Plane]) -> None:
         self.slices = slices
         self.mesh = self.generate_mesh()
         self.cost: float = None
