@@ -49,9 +49,6 @@ class STL_Model:
         ax = plt.gca()
 
         ax.scatter(self.pointcloud[0,:], self.pointcloud[1,:], self.pointcloud[2,:],"*k")
-        ax.set_xlabel('X Label')
-        ax.set_ylabel('Y Label')
-        ax.set_zlabel('Z Label')
 
         ax.axis("equal")
 

@@ -2,20 +2,20 @@
 Simulating a robotic chainsaw carving a 3D model
 
 
-## notes 
-- It is going to be pretty difficult to first convert a 3D model into a simplified mesh and then determine if the model is cuttable. The easier solution
-might be to generate the mesh via cuts that we know are possible, and then re-order the cuts optimally. We can use the projection technique to find possible cuts.
+## To Generate Graphs
+```
+python main_results.py
+```
 
-- use mesh
+## To actually cut models and print out policy results
+```
+python main.py
+```
+In this file, I have marked the lines one can modify in order to change the cut choosing policy and the number of cuts the algorithm should make
 
-
-- so a slice is just a plane that intersects the model, a cut is a combination of 1 or two slices that form a mesh that we can subtract from the model to remove material.
-
-
-https://arxiv.org/pdf/0912.4540.pdf
-
-https://github.com/mikedh/trimesh/issues/1492
-
-
-https://trimesh.org/trimesh.intersections.html#trimesh.intersections.mesh_plane
-
+## Requirements
+- alphashape==1.3.1
+- matplotlib==3.7.2
+- numpy==1.25.2
+- scipy==1.11.4
+- trimesh==4.0.5

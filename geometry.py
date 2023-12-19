@@ -10,6 +10,7 @@ import trimesh
 import copy
 import math
 
+
 class Plane:
     """
     Class to contain methods needed to define an admissable plane that can be cut
@@ -33,15 +34,15 @@ class Plane:
 
         return norm_vec
 
-    def plot(self) -> None:
+    def plot(self, color: str = "b") -> None:
         """
         Given a 3D plot, plot the planes
         """
         def drawpoly(xco, yco, zco):
             verts = [list(zip(xco, yco, zco))]
             temp = Poly3DCollection(verts)
-            temp.set_facecolor("b")
-            temp.set_alpha(.1)
+            temp.set_facecolor(color)
+            temp.set_alpha(.2)
             temp.set_edgecolor('k')
 
             plt.gca().add_collection3d(temp)
@@ -56,15 +57,17 @@ class Cut:
         self.slices = slices
         self.is_convex = len(self.slices) == 1
         self.mesh = self.generate_mesh()
-        self.cost: float = None
-        self.neighbors: List[Cut] = None
+        self.is_cut = False
 
     def plot(self) -> None:
         """
         Plot plane or planes that define the cut
         """
         for slice in self.slices:
-            slice.plot()
+            if self.is_convex:
+                slice.plot(color="g")
+            else:
+                slice.plot(color="r")
         
     def generate_mesh(self) -> None:
         """
@@ -99,19 +102,19 @@ class Cut:
 
         return cut_mesh
 
-    def calculate_cut_surface_area(self, model: trimesh.Trimesh) -> float:
+    def calculate_cut_surface_area(self, mesh: trimesh.Trimesh) -> float:
         """
         Calculate the surface area of the cut given a model and the cut
         """
         # create a copy model to mess around with
-        model = copy.deepcopy(model)
+        mesh = copy.deepcopy(mesh)
 
         # if cut is convex
         if self.is_convex:
             plane = self.slices[0]
 
             # get points of plane intersection
-            intersection = model.section(plane.norm_vector, plane.point)
+            intersection = mesh.section(plane.norm_vector, plane.point)
             if intersection is None:
                 return 0
             intersection = intersection.to_planar()[0].vertices.T
@@ -124,7 +127,7 @@ class Cut:
             plane_2 = self.slices[1]
 
             # get points of plane_1 intersection
-            intersection = model.section(plane_1.norm_vector, plane_1.point)
+            intersection = mesh.section(plane_1.norm_vector, plane_1.point)
 
             if intersection is None:
                 area_1 = 0
@@ -137,7 +140,7 @@ class Cut:
 
                 ray_vec = corner_2 - corner_1
 
-                ray_intersect = model.ray.intersects_location(corner_1.T, ray_vec.T)[0]
+                ray_intersect = mesh.ray.intersects_location(corner_1.T, ray_vec.T)[0]
 
                 vertices = np.concatenate((vertices, ray_intersect), axis = 0).T
 
@@ -164,7 +167,7 @@ class Cut:
                 area_1 = self.calculate_area(points)
 
             # get points of plane_2 intersection
-            intersection = model.section(plane_2.norm_vector, plane_2.point)
+            intersection = mesh.section(plane_2.norm_vector, plane_2.point)
 
             if intersection is None:
                 area_2 = 0
@@ -197,7 +200,51 @@ class Cut:
                 area_2 = self.calculate_area(points)
 
             return area_1 + area_2
+        
+    def calculate_cut_surface_area_2(self, mesh: trimesh.Trimesh) -> float:
+        """
+        Calculate the surface area of the cut given a model and the cut
+        """
+        # create a copy model to mess around with
+        mesh = copy.deepcopy(mesh)
 
+        # if cut is convex
+        if self.is_convex:
+            plane = self.slices[0]
+
+            # get points of plane intersection
+            intersection = mesh.section(plane.norm_vector, plane.point)
+            if intersection is None:
+                return 0
+
+            return intersection.to_planar(normal = plane.norm_vector)[0].area
+        else:
+            plane_1 = self.slices[0]
+            plane_2 = self.slices[1]
+
+            # get area of first cut
+            mesh_1 = mesh.slice_plane(plane_2.point, -plane_2.norm_vector, cap=True)
+            intersection = mesh_1.section(plane_1.norm_vector, plane_1.point)
+
+            if intersection is None:
+                area_1 = 0
+            else:
+                area_1 = intersection.to_planar()[0].area
+
+            # get area of second cut
+            mesh_2 = mesh.slice_plane(plane_1.point, -plane_1.norm_vector, cap=True)
+            intersection = mesh_2.section(plane_2.norm_vector, plane_2.point)
+
+            if intersection is None:
+                area_2 = 0
+            else:
+                area_2 = intersection.to_planar()[0].area
+            return area_1 + area_2
+
+
+
+
+            
 
     def calculate_area(self, points: np.ndarray) -> float:
         """
@@ -254,7 +301,7 @@ class Cut:
     
     def unrotate_plane(self, points: np.ndarray, norm_vec: np.ndarray) -> np.ndarray:
         """
-        If points are on a plane, un-roatate them so they all lie on the xy axis
+        If points are on a plane, un-rotate them so they all lie on the xy axis
         """
         M = norm_vec
         N = np.array([0,0,1])
@@ -275,9 +322,20 @@ class Cut:
         
         new_array =  R @ points
         return new_array[0:2,:]
+    
+    def calculate_removed_volume(self, mesh: trimesh.Trimesh) -> float:
+        """
+        Calculate the area of material that will be removed
+        """
+
+        # create a copy model to mess around with
+        mesh = copy.deepcopy(mesh)
+
+        cut_mesh = self.mesh
+
+        intersection = trimesh.boolean.boolean_manifold([mesh, cut_mesh], operation="intersection")
+
+        return intersection.volume
 
 
 
-
-    def generate_cost(self) -> None:
-        pass

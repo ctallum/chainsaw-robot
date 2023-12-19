@@ -42,14 +42,15 @@ class Model:
                         self.mesh.vertices[:,1], 
                         triangles=self.mesh.faces, 
                         Z=self.mesh.vertices[:,2], 
-                        alpha=.7)
+                        alpha=.4)
     
-    def make_cut(self, cut: Cut, debug=False) -> None:
+    def make_cut(self, cut: Cut) -> None:
         """
         Using a defined cut, remove material from the model
         """
         self.mesh = trimesh.boolean.boolean_manifold([self.mesh, cut.mesh],
                                                      operation="difference")
+        
 
 def plot_mesh(mesh: trimesh.Trimesh) -> None:
     """

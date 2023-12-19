@@ -22,7 +22,7 @@ class Slicer:
     Class to contain methods needed to slice the object into a simplified 3D model
     """
     threshold = 0.1
-    def __init__(self, path: str, num_poses: int = 20) -> None:
+    def __init__(self, path: str, num_poses: int = 20, graphs=False) -> None:
         """
         Initialize everything
         """
@@ -30,6 +30,7 @@ class Slicer:
         self.max_size = self.stl_model.get_max_size()
         self.cuts: List[Cut] = []
         self.view_angles = self.generate_view_angles(nb_poses = num_poses)
+        self.plot_graphs = graphs
         self.generate_cuts()
 
 
@@ -43,20 +44,44 @@ class Slicer:
 
         # for each possible angle, generate a set of admissable cuts
         for angle_idx in range(num_angles):
+            # print(len(self.cuts))
             # angle_idx = 1
             angle = self.view_angles[angle_idx]
         
             # get a flattened version of the stl points from the specific angle
             perspective_array = self.rotate_and_flatten(angle)
 
+            # plot perspective array
+            if self.plot_graphs:
+                if angle_idx in [4,7]:
+                    plt.figure()
+                    plt.plot(*perspective_array, "ob")
+                    plt.gca().axis('equal')
+
             # get alpha shape which contains the set of points. Similar to a concave hull
             alpha_shape = alphashape.alphashape(perspective_array.T, 2)
             alpha_shape = alpha_shape.simplify(self.threshold, preserve_topology=True)
             alpha_shape = np.array(alpha_shape.boundary.xy)
 
+            # plot alpha shape
+            if self.plot_graphs:
+                if angle_idx in [4]:
+                    plt.figure()
+                    plt.plot(*perspective_array, "ob")
+                    plt.plot(*alpha_shape, "-k")
+                    plt.gca().axis('equal')
+
             # calculate the convex hull of the array
             hull = ConvexHull(perspective_array.T)
             hull_points = perspective_array[:,hull.vertices]
+
+            # plot alpha shape
+            if self.plot_graphs:
+                if angle_idx in [4]:
+                    plt.figure()
+                    plt.plot(*perspective_array, "ob")
+                    plt.plot(*hull_points, "-k")
+                    plt.gca().axis('equal')
 
             # if two sequential points are concave, remove points until we only have one concave
             # point. Prevents non-admissable cuts
@@ -68,15 +93,17 @@ class Slicer:
             # One last checks to re-classify concave points purely based on angles, not convex hull
             is_concave = self.do_last_concave_check(alpha_shape, is_concave)
 
-            # plt.figure()
-            # plt.plot(*alpha_shape)
-            # plt.plot(*perspective_array, "*b")
-            # for test_idx in range(len(is_concave)):
-            #     if is_concave[test_idx]:
-            #         plt.plot(*alpha_shape[:,test_idx],"or")
-            #     else:
-            #         plt.plot(*alpha_shape[:,test_idx],"ok")
-            # plt.plot(*hull_points)
+            if self.plot_graphs and angle_idx in [4]:
+                plt.figure()
+                plt.plot(*alpha_shape)
+                plt.plot(*perspective_array, "*b")
+                for test_idx in range(len(is_concave)):
+                    if is_concave[test_idx]:
+                        plt.plot(*alpha_shape[:,test_idx],"or")
+                    else:
+                        plt.plot(*alpha_shape[:,test_idx],"og")
+                # plt.plot(*hull_points)
+                plt.gca().axis('equal')
 
             cut_lines = self.generate_cut_lines(alpha_shape, is_concave)
 
@@ -84,15 +111,18 @@ class Slicer:
                 alpha_shape = np.delete(alpha_shape, -1, 1)
                 is_concave.pop(-1)
 
-            # while plane_idx < len(is_concave) - 1:
-            #     if is_concave[plane_idx]:
-            #         plt.plot(*cut_lines[:,:,plane_idx], "-r")
-            #     elif is_concave[plane_idx+1]:
-            #         plt.plot(*cut_lines[:,:,plane_idx], "-r")
-            #     else:
-            #         plt.plot(*cut_lines[:,:,plane_idx], "-g")
-            #         # print("convex")
-            #     plane_idx += 1
+            if self.plot_graphs and angle_idx in [4]:
+                plane_idx = 0
+                while plane_idx < len(is_concave) :
+                    if is_concave[plane_idx]:
+                        plt.plot(*cut_lines[:,:,plane_idx], "-r")
+                    elif is_concave[plane_idx+1]:
+                        plt.plot(*cut_lines[:,:,plane_idx], "-r")
+                    else:
+                        plt.plot(*cut_lines[:,:,plane_idx], "-g")
+                        # print("convex")
+                    plane_idx += 1
+                    plt.gca().axis('equal')
 
             # start converting the 2D lines into 3D planes
             planes = []
